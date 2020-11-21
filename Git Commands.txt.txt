@@ -1,0 +1,11 @@
+
+<!-- Github Commands -->
+$ 
+git clone 'git@github.com:sadam-99/Relationship-Extractor-NLP.git'
+git status
+git add .   (if only any folder/file)
+git status
+git commit -m "message/comment"
+git push
+
+git log (for history)
