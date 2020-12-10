@@ -3,17 +3,36 @@
 # PRACHI VATS  (NET ID: PXV180021)
 # Entities Relationship Extraction Project
 
+import re, sys, nltk
+import _pickle as pickle
+import pickle
+import os
 import nltk
-from sklearn.metrics import f1_score
+from nltk.parse import stanford
+# import warnings
+
+java_path = "C:/Program Files/Java/jdk-13.0.2/bin/java.exe"
+os.environ['JAVAHOME'] = java_path
+# For preprocessing  Testing data open "TEST_FILE.txt"
+lines = []
+for line in open("../DATA_FILES/Main_Data/TEST_Sent.TXT"):
+    m = re.match(r'^([0-9]+)\s"(.+)"$', line.strip())
+    if(m is not None):
+        lines.append(m.group(2))
+
+batch_size = 10  
+lines = lines*batch_size
+
 import sys, os, _pickle as pickle
 import tensorflow as tf
-import keras
 import numpy as np
-
+import nltk
+from sklearn.metrics import f1_score
+import keras
 
 DATA_DIR = '../DATA_FILES'                        # Directory for Data and Other files
 CKPT_DIR = '../Checkpoint_Model'                  # Directory for Checkpoints 
-MODEL_CKPT_DIR = r"Checkpoint_Model/Latesttraining/" # Directory for Checkpoints of Model
+MODEL_CKPT_DIR = r"Checkpoint_Model/Epochs/" # Directory for Checkpoints of Model
 
 pos_embd_dim = 25         # Dimension of embedding layer for POS Tags
 dep_embd_dim = 25         # Dimension of embedding layer for Dependency Types
@@ -34,6 +53,148 @@ MAX_path_L = 10         # Maximum Sent_Number of sequence
 channels = 100      # No. of types of features to feed in LSTM-RNN
 lambda_l2 = 0.0001
 
+# Dependency Tree
+from nltk.parse.stanford import StanfordDependencyParser
+from nltk.parse.stanford import StanfordDependencyParser
+os.environ['CLASSPATH'] = r"E:/The University of Texas at Dallas/Fall 2020\Natural Language Processing- CS 6320.501/NLP Project/stanford-parser-full-2020-11-17"
+CFG_Mod_path = r"E:/The University of Texas at Dallas/Fall 2020/Natural Language Processing- CS 6320.501/NLP Project/Dep_Model/englishPCFG.caseless.ser.gz"
+dep_parser=StanfordDependencyParser(model_path=CFG_Mod_path)
+# print([parse.tree() for parse in dep_parser.raw_parse("The quick brown fox jumps over the lazy dog.")])
+
+
+data = []
+entity1_POS = []
+entity2_POS = []
+for j,line in enumerate(lines):
+    tokenList = []
+    tempList = []
+    t = line.split("<e1>")
+    tokenList.append(t[0])
+    tempList.append(t[0])
+
+    t = t[1].split("</e1>")
+    e1_text = tokenList
+    e1_text = " ".join(e1_text)
+    e1_text = nltk.word_tokenize(e1_text)
+    tokenList.append(t[0])
+    e11= t[0]
+    y = nltk.word_tokenize(t[0])
+    y[0] +="E11"
+    tempList.append(" ".join(y))
+    t = t[1].split("<e2>")
+    tokenList.append(t[0])
+    tempList.append(t[0])
+    t = t[1].split("</e2>")
+    e22 = t[0]
+    e2_text = tokenList
+    e2_text = " ".join(e2_text)
+    e2_text = nltk.word_tokenize(e2_text)
+    tokenList.append(t[0])
+    tokenList.append(t[1])
+    y = nltk.word_tokenize(t[0])
+    y[0] +="E22"
+    tempList.append(" ".join(y))
+    tempList.append(t[1])
+
+    tokenList = " ".join(tokenList)
+    tokenList = nltk.word_tokenize(tokenList)
+    tempList = " ".join(tempList)
+    tempList = nltk.word_tokenize(tempList)
+
+
+    q1 = nltk.word_tokenize(e11)[0]
+    q2 = nltk.word_tokenize(e22)[0]
+    for i, word in enumerate(tokenList):
+        if(word.find(q1)!=-1):
+            if(tempList[i].find("E11")!=-1):
+                entity1_POS.append(i)            
+                break
+    for i, word in enumerate(tokenList):
+        if(word.find(q2)!=-1):
+                if(tempList[i].find("E22")!=-1):
+                    entity2_POS.append(i)   
+    tokenList = " ".join(tokenList)
+    data.append(tokenList)
+    # print(j, tokenList)
+#     print(j, text)
+entity1 = tokenList.split(" ")[entity1_POS[0]]
+entity2 = tokenList.split(" ")[entity2_POS[0]]
+print("entity1:---->", entity1 ,"=======", "entity2:----->",  entity2)
+
+
+
+# This function calculates the Lowest Common Ancestor Along the Shortest path to the Root Node
+def lowestCommonAncester(tree, index1, index2):
+    node = index1
+    path_1 = []
+    path_2 = []
+    path_1.append(index1)
+    path_2.append(index2)
+    while(node != tree.root):
+        node = tree.nodes[node['head']]
+        path_1.append(node)
+    node = index2
+    while(node != tree.root):
+        node = tree.nodes[node['head']]
+        path_2.append(node)
+    for l1, l2 in zip(path_1[::-1],path_2[::-1]):
+        if(l1==l2):
+            nodeTemp = l1
+    return nodeTemp
+
+
+# This function Evaluated the Path from E1/E2 to the Lowest Common Ancestor
+def path_lowestCommonAncester(tree, node, lca_node):
+    all_path = []
+    all_path.append(node)
+    while(node != lca_node):
+        node = tree.nodes[node['head']]
+        all_path.append(node)
+    return all_path
+
+
+sentences = data
+Train_Sent_Count = len(sentences)
+word_path1 = []
+word_path2 = []
+rel_path1 = []
+rel_path2 = []
+pos_path1 = []
+pos_path2 = []
+for i in range(Train_Sent_Count):
+    word_path1.append(0)
+    word_path2.append(0)
+    rel_path1.append(0)
+    rel_path2.append(0)
+    pos_path1.append(0)
+    pos_path2.append(0)
+
+
+for i in range(Train_Sent_Count):
+    try:
+        parse_tree = dep_parser.raw_parse(sentences[i])
+        for trees in parse_tree:
+            tree = trees
+        node1 = tree.nodes[entity1_POS[i]+1]
+        node2 = tree.nodes[entity2_POS[i]+1]
+        if node1['address']!=None and node2['address']!=None:
+            # print(i, "success")
+            lca_node = lowestCommonAncester(tree, node1, node2)
+            path1 = path_lowestCommonAncester(tree, node1, lca_node)
+            path2 = path_lowestCommonAncester(tree, node2, lca_node)
+
+            word_path1[i] = [p["word"] for p in path1]
+            word_path2[i] = [p["word"] for p in path2]
+            rel_path1[i] = [p["rel"] for p in path1]
+            rel_path2[i] = [p["rel"] for p in path2]
+            pos_path1[i] = [p["tag"] for p in path1]
+            pos_path2[i] = [p["tag"] for p in path2]
+        else:
+            print(i, node1["address"], node2["address"])
+    except AssertionError:
+        print(i, "error")
+
+
 grap = tf.Graph()
 
 with grap.as_default():
@@ -46,7 +207,7 @@ with grap.as_default():
         TOKEN_ids = tf.placeholder(tf.int32, shape=[2, batch_size, MAX_path_L], name="word_ids") 
 
          # POS Tags in the sequence = 2X10X10
-        POS_ids = tf.placeholder(tf.int32, [2, batch_size, MAX_path_L], name="pos_ids") 
+        POS_IDs = tf.placeholder(tf.int32, [2, batch_size, MAX_path_L], name="pos_ids") 
 
         # Dependency Types in the sequence = 2X10X10
         dep_ids = tf.placeholder(tf.int32, [2, batch_size, MAX_path_L], name="dep_ids") 
@@ -68,7 +229,7 @@ with grap.as_default():
     # Embedding Layer of POS Tags 
     with tf.name_scope("pos_embedding"):
         W = tf.Variable(tf.random_uniform([POS_Dep_size, pos_embd_dim]), name="W")
-        embedded_pos = tf.nn.embedding_lookup(W, POS_ids)
+        embedded_pos = tf.nn.embedding_lookup(W, POS_IDs)
         pos_embedding_saver = tf.train.Saver({"pos_embedding/W": W})
         init=tf.global_variables_initializer()   # Initializing all Variables within the scope
 
@@ -216,11 +377,11 @@ with grap.as_default():
 
 
 f = open(DATA_DIR + '/vocab.pkl', 'rb')
-VOCAB_Data = pickle.load(f)
+vocab = pickle.load(f)
 f.close()
 
-Token_2_ID = dict((w, i) for i,w in enumerate(VOCAB_Data))
-ID_2_Token = dict((i, w) for i,w in enumerate(VOCAB_Data))
+Token_2_ID = dict((w, i) for i,w in enumerate(vocab))
+ID_2_Token = dict((i, w) for i,w in enumerate(vocab))
 
 unknown_token = "UNKNOWN_TOKEN"
 Token_2_ID[unknown_token] = Vocab_SIZE -1
@@ -241,8 +402,6 @@ for line in open(DATA_DIR + '/relation_types.txt'):
 
 Label_2_ID = dict((w, i) for i,w in enumerate(relation_vocab))
 ID_2_Label = dict((i, w) for i,w in enumerate(relation_vocab))
-
-# print("=====Label_2_ID=======", Label_2_ID)
 
 POS_2_ID = dict((w, i) for i,w in enumerate(pos_tags_vocab))
 ID_2_POS = dict((i, w) for i,w in enumerate(pos_tags_vocab))
@@ -282,15 +441,16 @@ def Get_POS_Tagging(x):
 
 
 
-f = open(DATA_DIR + '/Main_Data/train_paths', 'rb')
-word_p1, word_p2, dep_p1, dep_p2, pos_p1, pos_p2 = pickle.load(f)
-f.close()
+# f = open(data_dir + '/test_pathsv1', 'rb')
+# word_p1, word_p2, dep_p1, dep_p2, pos_p1, pos_p2 = pickle.load(f)
+# f.close()
+word_p1, word_p2, dep_p1, dep_p2, pos_p1, pos_p2  = word_path1, word_path2, rel_path1, rel_path2, pos_path1, pos_path2
+# print(word_p1, word_p2, dep_p1, dep_p2, pos_p1, pos_p2)
 
 relations = []
-for line in open(DATA_DIR + '/Main_Data/train_relations.txt'):
-#     print(line.strip().split())
+for line in open(DATA_DIR + '/test_relations.txt'):
     relations.append(line.strip().split()[0])
-# print(relations)
+
 
 
 Sent_Number = len(word_p1)
@@ -346,104 +506,52 @@ for i in range(Sent_Number):
 
 
 
-with grap.as_default():
-    sess = tf.Session()
-    sess.run(tf.global_variables_initializer())
-    saver = tf.train.Saver()
-#     saver = tf.train.Saver(defer_build=True)
-
-# with grap.as_default():
-#     for i in tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope='dep_embedding'):
-#         print(i.name)
-
-# model_dir = r"E:\The University of Texas at Dallas\Fall 2020\Natural Language Processing- CS 6320.501\NLP Project\Relation-Classification-using-Bidirectional-LSTM-Tree\Relation-Classification-using-Bidirectional-LSTM\checkpoint\modelv1"
-
-# To Uncomment if you want to continue the Training from Particular Epoch
-# latest_mod_DIR= r"E:\The University of Texas at Dallas\Fall 2020\Natural Language Processing- CS 6320.501\NLP Project\Relation-Classification-using-Bidirectional-LSTM-Tree\Relation-Classification-using-Bidirectional-LSTM\LCA Shortest Path\checkpoint\modelv1\Epoch19"
-# model = tf.train.latest_checkpoint(latest_mod_DIR)
-# saver.restore(sess, model)
-
-# tf.train.latest_checkpoint(MODEL_CKPT_DIR)
-# import numpy as np
-# from tensorflow.python.layers import base
-# import tensorflow as tf
-# import tensorflow.contrib.slim as slim
-# def model_summary():
-#     model_vars = tf.trainable_variables()
-#     slim.model_analyzer.analyze_vars(model_vars, print_info=True)
-
-# with grap.as_default():
-#     model_summary()
-
-
-with grap.as_default():
-        train_vars= tf.trainable_variables()
-        all_vars = tf.global_variables()
-print("len(all_vars), len(train_vars)", len(all_vars), len(train_vars))
+# MODEL_CKPT_DIR = r"E:\The University of Texas at Dallas\Fall 2020\Natural Language Processing- CS 6320.501\NLP Project\Relation-Classification-using-Bidirectional-LSTM-Tree\Relation-Classification-using-Bidirectional-LSTM\LCA Shortest Path\checkpoint\modelv1\Epoch19"
+# MODEL_CKPT_DIR = r"E:\The University of Texas at Dallas\Fall 2020\Natural Language Processing- CS 6320.501\NLP Project\Relation-Classification-using-Bidirectional-LSTM-Tree\Relation-Classification-using-Bidirectional-LSTM\LCA Shortest Path\checkpoint\NewTraining\Epoch15"
+# MODEL_CKPT_DIR = r"E:\The University of Texas at Dallas\Fall 2020\Natural Language Processing- CS 6320.501\NLP Project\Submision\SDP-LSTM-Model\Checkpoint_Model\Latesttraining\Epoch26"
+MODEL_CKPT_DIR = r"E:\The University of Texas at Dallas\Fall 2020\Natural Language Processing- CS 6320.501\NLP Project\Submision\SDP-LSTM-Model\Checkpoint_Model\Epochs\Epoch100"
 # MODEL_CKPT_DIR
-
-# num_epochs = 61
-num_epochs = 100
 with grap.as_default():
-    for epoch in range(num_epochs):
-        for j in range(num_batches):
-            path_dict = [path1_len[j*batch_size:(j+1)*batch_size], path2_len[j*batch_size:(j+1)*batch_size]]
-            word_dict = [word_p1_ids[j*batch_size:(j+1)*batch_size], word_p2_ids[j*batch_size:(j+1)*batch_size]]
-            pos_dict = [pos_p1_ids[j*batch_size:(j+1)*batch_size], pos_p2_ids[j*batch_size:(j+1)*batch_size]]
-            dep_dict = [dep_p1_ids[j*batch_size:(j+1)*batch_size], dep_p2_ids[j*batch_size:(j+1)*batch_size]]
-            y_dict = rel_ids[j*batch_size:(j+1)*batch_size]
+    sess_f1 = tf.Session()
+    sess_f1.run(tf.global_variables_initializer())
 
-            Tensor_DICT = {
-                PATH_LEN:path_dict,
-                TOKEN_ids:word_dict,
-                POS_ids:pos_dict,
-                dep_ids:dep_dict,
-                True_Label:y_dict}
-#             with grap.as_default():
-    #             with tf.Session(graph=grap) as sess:
-            # print("=======Sess Running=========")
-            if j % 50 == 0:
-                print("===== Trained Batches:", j,"Epoch Number", epoch)
-            _, loss, step = sess.run([optimizer, total_loss, global_step], Tensor_DICT)
-            if step%10==0:
-                print("=============Step:", step, "loss:============",loss)
-        if (epoch % 3) == 0:
-            os.makedirs(MODEL_CKPT_DIR + "Epoch" + str(epoch))
-            Model_Path = os.path.join(MODEL_CKPT_DIR, "Epoch" + str(epoch) + "/")
-            print(Model_Path)
-            NUMBER_OF_CKPT = 200
-            saver.save(sess, Model_Path, global_step=NUMBER_OF_CKPT)
-            print("============Model has been Saved Model for Epoch Number:=======>", epoch)
+# Testing Begins
+with grap.as_default():
+    checkpoint_file = tf.train.latest_checkpoint(MODEL_CKPT_DIR)
+    saver = tf.train.import_meta_graph("{}.meta".format(checkpoint_file))
+    saver.restore(sess_f1, checkpoint_file)
+    all_predictions = []
+    for j in range(num_batches):
+        path_dict = [path1_len[j*batch_size:(j+1)*batch_size], path2_len[j*batch_size:(j+1)*batch_size]]
+        word_dict = [word_p1_ids[j*batch_size:(j+1)*batch_size], word_p2_ids[j*batch_size:(j+1)*batch_size]]
+        pos_dict = [pos_p1_ids[j*batch_size:(j+1)*batch_size], pos_p2_ids[j*batch_size:(j+1)*batch_size]]
+        dep_dict = [dep_p1_ids[j*batch_size:(j+1)*batch_size], dep_p2_ids[j*batch_size:(j+1)*batch_size]]
+        # y_dict = rel_ids[j*batch_size:(j+1)*batch_size]
 
-print("===============Training Completed======================")
-# Training accuracy on the final Trained Model
-all_predictions = []
-for j in range(num_batches):
-    path_dict = [path1_len[j*batch_size:(j+1)*batch_size], path2_len[j*batch_size:(j+1)*batch_size]]
-    word_dict = [word_p1_ids[j*batch_size:(j+1)*batch_size], word_p2_ids[j*batch_size:(j+1)*batch_size]]
-    pos_dict = [pos_p1_ids[j*batch_size:(j+1)*batch_size], pos_p2_ids[j*batch_size:(j+1)*batch_size]]
-    dep_dict = [dep_p1_ids[j*batch_size:(j+1)*batch_size], dep_p2_ids[j*batch_size:(j+1)*batch_size]]
-    y_dict = rel_ids[j*batch_size:(j+1)*batch_size]
-
-    Tensor_DICT = {
-        PATH_LEN:path_dict,
-        TOKEN_ids:word_dict,
-        POS_ids:pos_dict,
-        dep_ids:dep_dict,
-        True_Label:y_dict}
-    with grap.as_default():
-        batch_predictions = sess.run(predictions, Tensor_DICT)
-        print("Sess Running for predictions")
+        Tensor_DICT = {
+            PATH_LEN:path_dict,
+            TOKEN_ids:word_dict,
+            POS_IDs:pos_dict,
+            dep_ids:dep_dict,
+            }
+            # True_Label:y_dict
+        batch_predictions = sess_f1.run(predictions, Tensor_DICT)
         all_predictions.append(batch_predictions)
 
-y_pred = []
-for i in range(num_batches):
-    for pred in all_predictions[i]:
-        y_pred.append(pred)
+    y_pred = []
+    for i in range(num_batches):
+        for pred in all_predictions[i]:
+            y_pred.append(pred)
 
-count = 0
-for i in range(batch_size*num_batches):
-    count += y_pred[i]==rel_ids[i]
-Train_Accuracy = count/(batch_size*num_batches) * 100
-print("===============Training Completed====================== \n")
-print("===============Final training accuracy after======================", Train_Accuracy)
+    # count = 0
+    # for i in range(batch_size*num_batches):
+    #     count += y_pred[i]==rel_ids[i]
+    # accuracy = count/(batch_size*num_batches) * 100
+    # print("test accuracy", accuracy)
+
+Relation_Pred = batch_predictions[0]
+
+print("\n")
+print("The Test Sentence is:", lines[0])
+print("The Entitity Relationship between", "entity1:", entity1 ,"AND", "entity2:", entity2, ":----> \n", ID_2_Label[Relation_Pred])
+print("\n")
